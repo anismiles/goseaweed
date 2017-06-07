@@ -39,7 +39,7 @@ type SubmitResult struct {
 }
 
 func (sw *Seaweed) BatchUploadFileParts(files []FilePart,
-	collection string, ttl string) ([]SubmitResult, error) {
+collection string, ttl string) ([]SubmitResult, error) {
 	results := make([]SubmitResult, len(files))
 	for index, file := range files {
 		results[index].FileName = file.FileName
@@ -181,8 +181,8 @@ func (sw *Seaweed) uploadManifest(fp *FilePart, manifest *ChunkManifest) error {
 	return e
 }
 
-func NewFilePartFromString(source, filename string) (ret FilePart, err error) {
-	ret.Reader = strings.NewReader(source)
+func NewFilePartFromReader(source io.Reader, size int64, filename string) (ret FilePart, err error) {
+	ret.Reader = source // strings.NewReader(source)
 	ret.ModTime = time.Now().UnixNano() / int64(time.Millisecond)
 	ret.FileName = filename
 
@@ -193,7 +193,6 @@ func NewFilePartFromString(source, filename string) (ret FilePart, err error) {
 		ret.MimeType = mime.TypeByExtension(ext)
 	}
 
-	size, err := strconv.ParseInt(strconv.Itoa(len(source)), 10, 64)
 	ret.FileSize = size
 	return
 }

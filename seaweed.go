@@ -65,7 +65,6 @@ func (sw *Seaweed) Assign(count int, collection string, ttl string) (*AssignResu
 }
 
 func (sw *Seaweed) UploadFile(filePath, collection, ttl string) (ret *SubmitResult, err error) {
-	// TODO - add retry
 	fp, e := NewFilePart(filePath)
 	if e != nil {
 		return nil, e
@@ -79,8 +78,8 @@ func (sw *Seaweed) UploadFile(filePath, collection, ttl string) (ret *SubmitResu
 	return
 }
 
-func (sw *Seaweed) UploadData(source, filename, collection, ttl string) (ret *SubmitResult, err error) {
-	fp, e := NewFilePartFromString(source, filename)
+func (sw *Seaweed) UploadViaReader(reader io.Reader, size int64, filename, collection, ttl string) (ret *SubmitResult, err error) {
+	fp, e := NewFilePartFromReader(reader, size, filename)
 	if e != nil {
 		return nil, e
 	}
@@ -93,8 +92,8 @@ func (sw *Seaweed) UploadData(source, filename, collection, ttl string) (ret *Su
 	return
 }
 
-func (sw *Seaweed) UploadDataWithFid(source, filename, server, fid string) (ret *SubmitResult, err error) {
-	fp, e := NewFilePartFromString(source, filename)
+func (sw *Seaweed) UploadViaReaderWithFid(reader io.Reader, size int64, filename, server, fid string) (ret *SubmitResult, err error) {
+	fp, e := NewFilePartFromReader(reader, size, filename)
 	if e != nil {
 		return nil, e
 	}
