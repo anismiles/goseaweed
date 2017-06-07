@@ -3,7 +3,7 @@ package goseaweed
 import "testing"
 
 const (
-	master = "192.168.199.2:9333"
+	master = "localhost:9333"
 )
 
 var (

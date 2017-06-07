@@ -2,6 +2,7 @@ package goseaweed
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,14 +10,13 @@ import (
 	"io/ioutil"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
-	"net"
-	"context"
 )
 
 type HttpClient struct {
@@ -37,7 +37,6 @@ type UploadResult struct {
 }
 
 var fileNameEscaper = strings.NewReplacer("\\", "\\\\", "\"", "\\\"")
-
 
 func NewTimeoutConn(conn net.Conn, idleTimeout time.Duration) (net.Conn, error) {
 	c := &TimeoutConn{
@@ -73,7 +72,6 @@ func (c *TimeoutConn) Write(b []byte) (int, error) {
 	}
 	return n, e
 }
-
 
 func NewHttpClient(MaxIdleConnsPerHost int, timeout time.Duration) *HttpClient {
 	Transport := &http.Transport{
@@ -189,11 +187,14 @@ func (hc *HttpClient) DownloadUrl(fileUrl string) (filename string, rc io.ReadCl
 		response.Body.Close()
 		return "", nil, fmt.Errorf("%s: %s", fileUrl, response.Status)
 	}
-	contentDisposition := response.Header["Content-Disposition"]
-	if len(contentDisposition) > 0 {
-		if strings.HasPrefix(contentDisposition[0], "filename=") {
-			filename = contentDisposition[0][len("filename="):]
-			filename = strings.Trim(filename, "\"")
+	contentDispositions := response.Header["Content-Disposition"]
+	if len(contentDispositions) > 0 {
+		for _, d := range contentDispositions {
+			i := strings.LastIndex(d, "filename=")
+			if i > 0 {
+				filename = d[i + len("filename="):]
+				filename = strings.Trim(filename, "\"")
+			}
 		}
 	}
 	rc = response.Body

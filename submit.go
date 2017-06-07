@@ -7,8 +7,10 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type FilePart struct {
@@ -17,6 +19,7 @@ type FilePart struct {
 	FileSize   int64
 	IsGzipped  bool
 	MimeType   string
+	Ext        string
 	ModTime    int64 //in seconds
 	Collection string
 	Ttl        string
@@ -26,10 +29,13 @@ type FilePart struct {
 
 type SubmitResult struct {
 	FileName string `json:"fileName,omitempty"`
+	FileBase string `json:"fileBase,omitempty"`
 	FileUrl  string `json:"fileUrl,omitempty"`
 	Fid      string `json:"fid,omitempty"`
 	Size     int64  `json:"size,omitempty"`
 	Error    string `json:"error,omitempty"`
+	MimeType string `json:"mime,omitempty"`
+	Ext      string `json:"ext,omitempty"`
 }
 
 func (sw *Seaweed) BatchUploadFileParts(files []FilePart,
@@ -37,6 +43,7 @@ func (sw *Seaweed) BatchUploadFileParts(files []FilePart,
 	results := make([]SubmitResult, len(files))
 	for index, file := range files {
 		results[index].FileName = file.FileName
+		results[index].FileBase = filepath.Base(file.FileName)
 	}
 	ret, err := sw.Assign(len(files), collection, ttl)
 	if err != nil {
@@ -50,26 +57,29 @@ func (sw *Seaweed) BatchUploadFileParts(files []FilePart,
 		if index > 0 {
 			file.Fid = file.Fid + "_" + strconv.Itoa(index)
 		}
-		file.Server = ret.Url
+		file.Server = ret.PublicUrl /* ret.Url */ // TODO - revisit; Note - uploading to PublicUrl for Dev; must shift to Url for production!
 		file.Collection = collection
 		_, err = sw.UploadFilePart(&file)
 		results[index].Size = file.FileSize
 		if err != nil {
 			results[index].Error = err.Error()
 		}
-		results[index].Fid = file.Fid
-		results[index].FileUrl = ret.PublicUrl + "/" + file.Fid
+		results[index].Fid = file.Fid + file.Ext
+		results[index].FileUrl = ret.PublicUrl + "/" + file.Fid + file.Ext
+
+		results[index].MimeType = file.MimeType
+		results[index].Ext = file.Ext
 	}
 	return results, nil
 }
 
-func (sw *Seaweed) UploadFilePart(fp *FilePart) (fid string, err error) {
+func (sw *Seaweed) UploadFilePart(fp *FilePart) (ret *SubmitResult, err error) {
 	if fp.Fid == "" {
 		ret, err := sw.Assign(1, fp.Collection, fp.Ttl)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		fp.Server, fp.Fid = ret.Url, ret.Fid
+		fp.Server, fp.Fid = ret.PublicUrl /* ret.Url */, ret.Fid // TODO - revisit; Note - uploading to PublicUrl for Dev; must shift to Url for production!
 	}
 	if fp.Server == "" {
 		if fp.Server, err = sw.LookupFileId(fp.Fid, fp.Collection, false); err != nil {
@@ -95,7 +105,7 @@ func (sw *Seaweed) UploadFilePart(fp *FilePart) (fid string, err error) {
 			if e != nil {
 				// delete all uploaded chunks
 				sw.DeleteChunks(&cm, fp.Collection)
-				return "", e
+				return nil, e
 			}
 			cm.Chunks = append(cm.Chunks,
 				&ChunkInfo{
@@ -118,13 +128,22 @@ func (sw *Seaweed) UploadFilePart(fp *FilePart) (fid string, err error) {
 		fileUrl := MkUrl(fp.Server, fp.Fid, args)
 		_, err = sw.HC.Upload(fileUrl, baseName, fp.Reader, fp.IsGzipped, fp.MimeType)
 	}
-	if err == nil {
-		fid = fp.Fid
+
+	ret = &SubmitResult{}
+
+	if err != nil {
+		ret.Error = err.Error()
+	} else {
+		ret.MimeType = fp.MimeType
+		ret.Ext = fp.Ext
+		ret.Fid = fp.Fid + ret.Ext
+		ret.Size = fp.FileSize
+		ret.FileUrl = fp.Server + "/" + fp.Fid + ret.Ext
 	}
 	return
 }
 
-func (sw *Seaweed) ReplaceFilePart(fp *FilePart, deleteFirst bool) (fid string, err error) {
+func (sw *Seaweed) ReplaceFilePart(fp *FilePart, deleteFirst bool) (ret *SubmitResult, err error) {
 	if deleteFirst && fp.Fid != "" {
 		sw.DeleteFile(fp.Fid, fp.Collection)
 	}
@@ -162,6 +181,23 @@ func (sw *Seaweed) uploadManifest(fp *FilePart, manifest *ChunkManifest) error {
 	return e
 }
 
+func NewFilePartFromString(source, filename string) (ret FilePart, err error) {
+	ret.Reader = strings.NewReader(source)
+	ret.ModTime = time.Now().UnixNano() / int64(time.Millisecond)
+	ret.FileName = filename
+
+	ext := strings.ToLower(path.Ext(filename))
+	ret.Ext = ext
+
+	if ret.MimeType == "" && ext != "" {
+		ret.MimeType = mime.TypeByExtension(ext)
+	}
+
+	size, err := strconv.ParseInt(strconv.Itoa(len(source)), 10, 64)
+	ret.FileSize = size
+	return
+}
+
 func NewFilePart(fullPathFilename string) (ret FilePart, err error) {
 	fh, openErr := os.Open(fullPathFilename)
 	if openErr != nil {
@@ -181,7 +217,9 @@ func NewFilePart(fullPathFilename string) (ret FilePart, err error) {
 		ret.FileName = fullPathFilename[0 : len(fullPathFilename)-3]
 	}
 	ret.FileName = fullPathFilename
-	if ext != "" {
+	ret.Ext = ext
+
+	if ret.MimeType == "" && ext != "" {
 		ret.MimeType = mime.TypeByExtension(ext)
 	}
 
